@@ -8,7 +8,7 @@ if (-not $IsLinux) {
     exit 1
 }
 
-Import-Module PKI.Linux -ErrorAction Stop
+if (-not (Get-Module PKI.Linux)) { Import-Module PKI.Linux -ErrorAction Stop }
 
 $password = ConvertTo-SecureString 'MySecureP@ssword1' -AsPlainText -Force
 $pfxPath  = '/tmp/mycert.pfx'

@@ -8,7 +8,7 @@ if (-not $IsLinux) {
     exit 1
 }
 
-Import-Module PKI.Linux -ErrorAction Stop
+if (-not (Get-Module PKI.Linux)) { Import-Module PKI.Linux -ErrorAction Stop }
 
 Write-Host "Creating self-signed certificate for 'myserver.example.com'..."
 $cert = New-SelfSignedCertificate `

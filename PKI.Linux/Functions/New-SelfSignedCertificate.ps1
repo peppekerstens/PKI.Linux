@@ -102,11 +102,9 @@ function New-SelfSignedCertificate {
 
         # Create key inside ShouldProcess so -WhatIf never allocates key material
         if ($KeyAlgorithm -eq 'ECDSA') {
-            $key = [System.Security.Cryptography.ECDsa]::Create(
-                [System.Security.Cryptography.ECCurve]::NamedCurves.nistP256
-            )
+            $key = [System.Security.Cryptography.ECDsa]::Create()  # defaults to P-256 on .NET
             $req = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new(
-                $dn, $key, $hashAlg
+                $dn, [System.Security.Cryptography.ECDsa]$key, $hashAlg
             )
         }
         else {
