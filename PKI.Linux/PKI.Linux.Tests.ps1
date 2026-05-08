@@ -180,13 +180,68 @@ Describe 'PKI.Linux module' -Skip:(-not $script:onLinux) {
         }
     }
 
-    Context 'Stubs emit warnings' {
-        It 'Get-Certificate writes a warning' {
-            $warns = $null
-            Get-Certificate -WarningVariable warns -WarningAction SilentlyContinue
-            $warns | Should -Not -BeNullOrEmpty
+    Context 'Get-Certificate — LocalStore parameter set' {
+        BeforeAll {
+            # Create a cert, export to DER, then import into CurrentUser\My
+            $script:gcCert = New-SelfSignedCertificate -DnsName 'get-cert-test.pki.linux' -Subject 'CN=GetCertTest'
+            $derPath = Join-Path ([System.IO.Path]::GetTempPath()) 'get-cert-test.cer'
+            Export-Certificate -Cert $script:gcCert -FilePath $derPath -Force
+            Import-Certificate -FilePath $derPath
         }
 
+        It 'Returns X509Certificate2 objects from CurrentUser\My' {
+            $certs = Get-Certificate
+            $certs | Should -Not -BeNullOrEmpty
+            $certs[0] | Should -BeOfType [System.Security.Cryptography.X509Certificates.X509Certificate2]
+        }
+
+        It 'Filters by Thumbprint' {
+            $thumbprint = $script:gcCert.Thumbprint
+            $results = Get-Certificate -Thumbprint $thumbprint
+            $results | Should -Not -BeNullOrEmpty
+            $results[0].Thumbprint | Should -Be $thumbprint
+        }
+
+        It 'Filters by SubjectName (partial match)' {
+            $results = Get-Certificate -SubjectName 'GetCertTest'
+            $results | Should -Not -BeNullOrEmpty
+            $results[0].Subject | Should -BeLike '*GetCertTest*'
+        }
+
+        It 'Filters by DnsName (SAN match)' {
+            $results = Get-Certificate -DnsName 'get-cert-test.pki.linux'
+            $results | Should -Not -BeNullOrEmpty
+        }
+
+        It 'Returns nothing for a thumbprint that does not exist' {
+            $results = Get-Certificate -Thumbprint ('0' * 40)
+            $results | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'Get-Certificate — enrollment stubs throw terminating errors' {
+        It 'SubmitRequest parameter set throws PlatformNotSupportedException' {
+            { Get-Certificate -Template 'WebServer' -ErrorAction Stop } |
+                Should -Throw -ExceptionType ([System.PlatformNotSupportedException])
+        }
+
+        It 'SubmitRequest error message mentions LocalStore' {
+            try {
+                Get-Certificate -Template 'WebServer' -ErrorAction Stop
+            }
+            catch {
+                $_.Exception.Message | Should -BeLike '*LocalStore*'
+            }
+        }
+
+        It 'PendingRetrieval parameter set throws PlatformNotSupportedException' {
+            $fakeRequest = [PSCustomObject]@{ Dummy = 1 }
+            { $fakeRequest | Get-Certificate -ErrorAction Stop } |
+                Should -Throw -ExceptionType ([System.PlatformNotSupportedException])
+        }
+    }
+
+    Context 'Stubs emit warnings' {
         It 'Switch-Certificate writes a warning' {
             $warns = $null
             Switch-Certificate -WarningVariable warns -WarningAction SilentlyContinue

@@ -22,7 +22,9 @@ Provides Linux implementations of the most useful Windows PKI cmdlets:
 | `Import-PfxCertificate` | Imports a PFX certificate + key into `CurrentUser\My` store |
 | `Test-Certificate` | Validates a certificate chain using X509Chain |
 
-Windows-only enrollment and Group Policy cmdlets (`Get-Certificate`, `Add-CertificateEnrollmentPolicyServer`, etc.) are exported as stubs that emit a `Write-Warning`.
+**`Get-Certificate`** is partially implemented: the `LocalStore` parameter set (Linux-native) reads and filters certificates from the local X509 store using pure .NET. The Windows enrollment parameter sets (`SubmitRequest`, `PendingRetrieval`) emit a structured terminating error explaining what is supported instead.
+
+Other Windows-only enrollment and Group Policy cmdlets (`Add-CertificateEnrollmentPolicyServer`, etc.) are exported as stubs that emit a `Write-Warning`.
 
 ---
 
@@ -107,7 +109,7 @@ See the [`Examples\`](Examples/) folder:
 | `Import-Certificate` | ✅ Implemented | `X509Store(CurrentUser\My).Add()` |
 | `Import-PfxCertificate` | ✅ Implemented | `X509Certificate2` + `X509Store.Add()` |
 | `Test-Certificate` | ✅ Implemented | `X509Chain.Build()` |
-| `Get-Certificate` | 🔶 Stub | Windows enrollment server |
+| `Get-Certificate` | ⚠️ Partial | `LocalStore` set: `X509Store.Find()` + SAN inspection. `SubmitRequest`/`PendingRetrieval` sets: structured terminating error |
 | `Add-CertificateEnrollmentPolicyServer` | 🔶 Stub | Windows AD/GPO |
 | `Get-CertificateAutoEnrollmentPolicy` | 🔶 Stub | Windows AD/GPO |
 | `Get-CertificateEnrollmentPolicyServer` | 🔶 Stub | Windows AD/GPO |
@@ -149,7 +151,32 @@ When .NET 9 becomes the minimum target, the plan is to migrate to `X509Certifica
 
 ### Enrollment-server stubs
 
-`Get-Certificate`, `Add-CertificateEnrollmentPolicyServer`, and the other enrollment cmdlets depend on Windows infrastructure: Active Directory Certificate Services, Windows Group Policy (GPO), and Windows Task Scheduler. These are stubs — they emit `Write-Warning` and do nothing. Contributions to implement SCEP/EST-based equivalents are welcome.
+`Add-CertificateEnrollmentPolicyServer`, and the other enrollment cmdlets (excluding `Get-Certificate`) depend on Windows infrastructure: Active Directory Certificate Services, Windows Group Policy (GPO), and Windows Task Scheduler. These are stubs — they emit `Write-Warning` and do nothing. Contributions to implement SCEP/EST-based equivalents are welcome.
+
+### Partial implementations
+
+Some cmdlets have Windows parameter sets that require Windows-only infrastructure, but also have use cases that are implementable on Linux. PKI.Linux marks these as **⚠️ Partial** and implements what can be done via .NET, while the unsupported parameter sets emit a structured `ThrowTerminatingError` with a `PlatformNotSupportedException` that explains what is supported instead.
+
+**`Get-Certificate`** is the first partial implementation:
+
+| Parameter set | Status | Notes |
+|---|---|---|
+| `LocalStore` (Linux-native) | ✅ Supported | Reads and filters certs from `X509Store` using .NET APIs |
+| `SubmitRequest` (Windows CA) | ❌ Not supported | Requires Active Directory Certificate Services |
+| `PendingRetrieval` (Windows CA) | ❌ Not supported | Requires Windows REQUEST store |
+
+**LocalStore parameters:**
+
+| Parameter | Behaviour |
+|---|---|
+| `-StoreName` | X509 store name (default: `My`) |
+| `-StoreLocation` | `CurrentUser` (default) or `LocalMachine` |
+| `-Thumbprint` | Exact thumbprint match via `X509FindType.FindByThumbprint` |
+| `-SubjectName` | Partial subject name match via `X509FindType.FindBySubjectName` |
+| `-DnsName` | SAN DNS name partial match — iterates `X509SubjectAlternativeNameExtension.EnumerateDnsNames()` |
+| `-Eku` | Extended Key Usage OID match via `X509FindType.FindByApplicationPolicy` |
+
+The Windows `Get-Certificate` cmdlet has no equivalent of this parameter set — it is exclusively an enrollment cmdlet. PKI.Linux adds `LocalStore` to cover the common intent behind the name: "show me what certificates I have."
 
 ---
 
@@ -240,6 +267,7 @@ The `CertificateRequest` docs confirmed that `CreateSelfSigned()` copies the key
 
 | Version | Date | Notes |
 |---|---|---|
+| 0.3.0 | 2026-05-08 | `Get-Certificate` partial implementation. `LocalStore` parameter set reads/filters from X509Store. `SubmitRequest`/`PendingRetrieval` emit structured terminating errors. Introduces partial implementation model. |
 | 0.2.0 | 2026-05-08 | Security and correctness improvements based on PowerShell SDK and .NET best-practice review. Structured ErrorRecord, IDisposable fixes, process{} blocks, ValidateRange/ValidateSet/ValidateScript additions. |
 | 0.1.0 | 2026-05-08 | Initial release. 7 cmdlets implemented, 10 stubs. |
 
