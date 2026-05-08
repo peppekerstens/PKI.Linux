@@ -19,22 +19,28 @@ function Import-Certificate {
     [OutputType([System.Security.Cryptography.X509Certificates.X509Certificate2])]
     param(
         [Parameter(Mandatory)]
+        [ValidateScript({ Test-Path $_ -PathType Leaf },
+            ErrorMessage = "Certificate file '{0}' was not found.")]
         [string] $FilePath,
 
+        [ValidateSet('Cert:\CurrentUser\My', 'Cert:\LocalMachine\My')]
         [string] $CertStoreLocation = 'Cert:\CurrentUser\My'
     )
 
-    if (-not (Test-Path $FilePath)) {
-        Write-Error "File not found: $FilePath"
-        return
-    }
-
     if ($CertStoreLocation -match 'LocalMachine') {
-        Write-Error "LocalMachine certificate store is not supported on Linux. Use 'Cert:\CurrentUser\My'."
-        return
+        $ex  = [System.PlatformNotSupportedException]::new(
+            "LocalMachine certificate store is not supported on Linux. Use 'Cert:\CurrentUser\My'."
+        )
+        $err = [System.Management.Automation.ErrorRecord]::new(
+            $ex,
+            'Import-Certificate.LocalMachineStoreNotSupported',
+            [System.Management.Automation.ErrorCategory]::NotImplemented,
+            $CertStoreLocation
+        )
+        $PSCmdlet.ThrowTerminatingError($err)
     }
 
-    # Load cert — handles both DER and PEM automatically
+    # Load cert — X509Certificate2 constructor handles both DER and PEM automatically
     $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($FilePath)
 
     if ($PSCmdlet.ShouldProcess($cert.Subject, 'Import-Certificate')) {
@@ -43,9 +49,17 @@ function Import-Certificate {
             [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
         )
         $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-        $store.Add($cert)
-        $store.Close()
-        Write-Verbose "Certificate '$($cert.Subject)' imported to CurrentUser\My."
+        try {
+            $store.Add($cert)
+            Write-Verbose "Certificate '$($cert.Subject)' imported to CurrentUser\My."
+        }
+        finally {
+            $store.Dispose()
+        }
         $cert
+    }
+    else {
+        # ShouldProcess returned false (-WhatIf / -Confirm declined) — dispose the cert
+        $cert.Dispose()
     }
 }

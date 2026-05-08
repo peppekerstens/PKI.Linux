@@ -5,6 +5,8 @@ function Export-Certificate {
     .Description
         Linux implementation of Export-Certificate. Exports an X509Certificate2 object
         to a DER (.cer/.crt) or PEM (.pem) file using .NET APIs. No openssl required.
+        Supports pipeline input — multiple certificates can be piped when exporting to
+        separate files.
     .Parameter Cert
         The X509Certificate2 object to export.
     .Parameter FilePath
@@ -36,23 +38,32 @@ function Export-Certificate {
         [switch] $Force
     )
 
-    if ((Test-Path $FilePath) -and -not $Force) {
-        Write-Error "File '$FilePath' already exists. Use -Force to overwrite."
-        return
-    }
-
-    if ($PSCmdlet.ShouldProcess($FilePath, 'Export-Certificate')) {
-        if ($Type -eq 'PEM') {
-            $derBytes = $Cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
-            $b64 = [Convert]::ToBase64String($derBytes, [Base64FormattingOptions]::InsertLineBreaks)
-            $pem = "-----BEGIN CERTIFICATE-----`n$b64`n-----END CERTIFICATE-----"
-            [System.IO.File]::WriteAllText($FilePath, $pem)
-        }
-        else {
-            $derBytes = $Cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
-            [System.IO.File]::WriteAllBytes($FilePath, $derBytes)
+    process {
+        if ((Test-Path $FilePath) -and -not $Force) {
+            $ex  = [System.IO.IOException]::new("File '$FilePath' already exists. Use -Force to overwrite.")
+            $err = [System.Management.Automation.ErrorRecord]::new(
+                $ex,
+                'Export-Certificate.FileAlreadyExists',
+                [System.Management.Automation.ErrorCategory]::ResourceExists,
+                $FilePath
+            )
+            $PSCmdlet.WriteError($err)
+            return
         }
 
-        Get-Item $FilePath
+        if ($PSCmdlet.ShouldProcess($FilePath, 'Export-Certificate')) {
+            if ($Type -eq 'PEM') {
+                $derBytes = $Cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+                $b64 = [Convert]::ToBase64String($derBytes, [Base64FormattingOptions]::InsertLineBreaks)
+                $pem = "-----BEGIN CERTIFICATE-----`n$b64`n-----END CERTIFICATE-----"
+                [System.IO.File]::WriteAllText($FilePath, $pem)
+            }
+            else {
+                $derBytes = $Cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+                [System.IO.File]::WriteAllBytes($FilePath, $derBytes)
+            }
+
+            Get-Item $FilePath
+        }
     }
 }

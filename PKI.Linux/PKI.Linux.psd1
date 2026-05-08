@@ -4,7 +4,7 @@
 
 @{
     RootModule        = 'PKI.Linux.psm1'
-    ModuleVersion     = '0.1.0'
+    ModuleVersion     = '0.2.0'
     GUID              = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
     Author            = 'Peppe Kerstens'
     CompanyName       = ''
@@ -45,6 +45,7 @@
             LicenseUri   = 'https://github.com/peppekerstens/PKI.Linux/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/peppekerstens/PKI.Linux'
             ReleaseNotes = @'
+0.2.0 - Security and correctness improvements based on PowerShell SDK and .NET best-practice review. X509Chain now disposed per pipeline record. RSA/ECDsa keys disposed after CreateSelfSigned. X509Store wrapped in try/finally. process{} blocks added to Export-Certificate, Export-PfxCertificate, Import-PfxCertificate. Structured ErrorRecord used throughout. ValidateRange on KeyLength. ValidateSet on CertStoreLocation. ValidateScript on FilePath inputs. CryptographicException wrapped with user-friendly context. TextExtension and ECDSA+KeyLength mismatches now emit warnings.
 0.1.0 - Initial release. New-SelfSignedCertificate, Export-Certificate, Export-PfxCertificate, Get-PfxData, Import-Certificate, Import-PfxCertificate, Test-Certificate implemented via .NET cryptography APIs. Enrollment-server cmdlets are stubs.
 '@
         }

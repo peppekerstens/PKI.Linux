@@ -7,6 +7,9 @@ function New-SelfSignedCertificate {
         X509SignatureGenerator from System.Security.Cryptography.X509Certificates.
         The certificate is returned as an X509Certificate2 object.
         Optionally stores it in the CurrentUser\My store.
+
+        Note: -TextExtension is accepted for Windows API compatibility but is not
+        applied on Linux. A warning is emitted when it is used.
     .Parameter Subject
         The subject distinguished name, e.g. "CN=MyServer" or "CN=MyServer,O=MyOrg".
     .Parameter DnsName
@@ -15,7 +18,8 @@ function New-SelfSignedCertificate {
     .Parameter KeyAlgorithm
         Key algorithm: RSA (default) or ECDSA.
     .Parameter KeyLength
-        RSA key length in bits. Default 2048. Ignored for ECDSA.
+        RSA key length in bits. Must be between 2048 and 8192. Default 2048.
+        Ignored for ECDSA (curve is fixed to NIST P-256).
     .Parameter HashAlgorithm
         Hash algorithm for the signature. Default SHA256.
     .Parameter NotBefore
@@ -23,12 +27,13 @@ function New-SelfSignedCertificate {
     .Parameter NotAfter
         Certificate validity end. Defaults to now + 1 year.
     .Parameter CertStoreLocation
-        Where to store the certificate. Accepts 'Cert:\CurrentUser\My'.
-        LocalMachine store is not supported on Linux.
+        Where to store the certificate. Only 'Cert:\CurrentUser\My' is supported on Linux.
+        LocalMachine store is not supported and will produce a warning.
     .Parameter KeyUsage
         Key usage flags. Default: DigitalSignature, KeyEncipherment.
     .Parameter TextExtension
-        Raw text extensions (ignored on Linux; placeholder for Windows compat).
+        Raw text extensions. Accepted for Windows API compatibility but NOT applied on Linux.
+        A warning is emitted when this parameter is used.
     .Example
         New-SelfSignedCertificate -DnsName "myserver.local"
     .Example
@@ -46,6 +51,7 @@ function New-SelfSignedCertificate {
         [ValidateSet('RSA', 'ECDSA')]
         [string] $KeyAlgorithm = 'RSA',
 
+        [ValidateRange(2048, 8192)]
         [int] $KeyLength = 2048,
 
         [ValidateSet('SHA256', 'SHA384', 'SHA512')]
@@ -55,6 +61,7 @@ function New-SelfSignedCertificate {
 
         [datetime] $NotAfter = [datetime]::Now.AddYears(1),
 
+        [ValidateSet('Cert:\CurrentUser\My', 'Cert:\LocalMachine\My')]
         [string] $CertStoreLocation,
 
         [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]
@@ -66,6 +73,14 @@ function New-SelfSignedCertificate {
         [string[]] $TextExtension
     )
 
+    # Warn about unsupported parameters before doing any work
+    if ($TextExtension) {
+        Write-Warning "-TextExtension is not supported on Linux and has been ignored. The certificate will not contain these extensions."
+    }
+    if ($KeyAlgorithm -eq 'ECDSA' -and $PSBoundParameters.ContainsKey('KeyLength')) {
+        Write-Warning "-KeyLength is ignored when -KeyAlgorithm is ECDSA. The curve is fixed to NIST P-256."
+    }
+
     # Build subject DN
     if (-not $Subject) {
         if ($DnsName) { $Subject = "CN=$($DnsName[0])" }
@@ -74,62 +89,63 @@ function New-SelfSignedCertificate {
 
     $dn = [System.Security.Cryptography.X509Certificates.X500DistinguishedName]::new($Subject)
 
-    # Create the key pair
-    if ($KeyAlgorithm -eq 'ECDSA') {
-        $key = [System.Security.Cryptography.ECDsa]::Create(
-            [System.Security.Cryptography.ECCurve]::NamedCurves.nistP256
-        )
-        $hashAlg = switch ($HashAlgorithm) {
-            'SHA256' { [System.Security.Cryptography.HashAlgorithmName]::SHA256 }
-            'SHA384' { [System.Security.Cryptography.HashAlgorithmName]::SHA384 }
-            'SHA512' { [System.Security.Cryptography.HashAlgorithmName]::SHA512 }
-        }
-        $padding = $null
-        $req = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new(
-            $dn, $key, $hashAlg
-        )
-    }
-    else {
-        $key = [System.Security.Cryptography.RSA]::Create($KeyLength)
-        $hashAlg = switch ($HashAlgorithm) {
-            'SHA256' { [System.Security.Cryptography.HashAlgorithmName]::SHA256 }
-            'SHA384' { [System.Security.Cryptography.HashAlgorithmName]::SHA384 }
-            'SHA512' { [System.Security.Cryptography.HashAlgorithmName]::SHA512 }
-        }
-        $padding = [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
-        $req = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new(
-            $dn, $key, $hashAlg, $padding
-        )
+    $hashAlg = switch ($HashAlgorithm) {
+        'SHA256' { [System.Security.Cryptography.HashAlgorithmName]::SHA256 }
+        'SHA384' { [System.Security.Cryptography.HashAlgorithmName]::SHA384 }
+        'SHA512' { [System.Security.Cryptography.HashAlgorithmName]::SHA512 }
     }
 
-    # Key Usage extension
-    $req.CertificateExtensions.Add(
-        [System.Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new($KeyUsage, $false)
-    )
-
-    # Basic Constraints — not a CA
-    $req.CertificateExtensions.Add(
-        [System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($false, $false, 0, $false)
-    )
-
-    # Subject Key Identifier
-    $req.CertificateExtensions.Add(
-        [System.Security.Cryptography.X509Certificates.X509SubjectKeyIdentifierExtension]::new($req.PublicKey, $false)
-    )
-
-    # Subject Alternative Names
-    if ($DnsName) {
-        $sanBuilder = [System.Security.Cryptography.X509Certificates.SubjectAlternativeNameBuilder]::new()
-        foreach ($name in $DnsName) { $sanBuilder.AddDnsName($name) }
-        $req.CertificateExtensions.Add($sanBuilder.Build())
-    }
-
-    # Create self-signed cert
     $notBeforeOffset = [System.DateTimeOffset]::new($NotBefore)
     $notAfterOffset  = [System.DateTimeOffset]::new($NotAfter)
 
     if ($PSCmdlet.ShouldProcess($Subject, 'New-SelfSignedCertificate')) {
-        $cert = $req.CreateSelfSigned($notBeforeOffset, $notAfterOffset)
+
+        # Create key inside ShouldProcess so -WhatIf never allocates key material
+        if ($KeyAlgorithm -eq 'ECDSA') {
+            $key = [System.Security.Cryptography.ECDsa]::Create(
+                [System.Security.Cryptography.ECCurve]::NamedCurves.nistP256
+            )
+            $req = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new(
+                $dn, $key, $hashAlg
+            )
+        }
+        else {
+            $key = [System.Security.Cryptography.RSA]::Create($KeyLength)
+            $padding = [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
+            $req = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new(
+                $dn, $key, $hashAlg, $padding
+            )
+        }
+
+        try {
+            # Key Usage extension
+            $req.CertificateExtensions.Add(
+                [System.Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new($KeyUsage, $false)
+            )
+
+            # Basic Constraints — not a CA
+            $req.CertificateExtensions.Add(
+                [System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($false, $false, 0, $false)
+            )
+
+            # Subject Key Identifier
+            $req.CertificateExtensions.Add(
+                [System.Security.Cryptography.X509Certificates.X509SubjectKeyIdentifierExtension]::new($req.PublicKey, $false)
+            )
+
+            # Subject Alternative Names
+            if ($DnsName) {
+                $sanBuilder = [System.Security.Cryptography.X509Certificates.SubjectAlternativeNameBuilder]::new()
+                foreach ($name in $DnsName) { $sanBuilder.AddDnsName($name) }
+                $req.CertificateExtensions.Add($sanBuilder.Build())
+            }
+
+            $cert = $req.CreateSelfSigned($notBeforeOffset, $notAfterOffset)
+        }
+        finally {
+            # Dispose the key — CreateSelfSigned copies it into the cert object
+            $key.Dispose()
+        }
 
         # Optionally store in CurrentUser\My
         if ($CertStoreLocation -and $CertStoreLocation -match 'CurrentUser') {
@@ -138,9 +154,13 @@ function New-SelfSignedCertificate {
                 [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
             )
             $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-            $store.Add($cert)
-            $store.Close()
-            Write-Verbose "Certificate added to CurrentUser\My store."
+            try {
+                $store.Add($cert)
+                Write-Verbose "Certificate added to CurrentUser\My store."
+            }
+            finally {
+                $store.Dispose()
+            }
         }
         elseif ($CertStoreLocation -and $CertStoreLocation -match 'LocalMachine') {
             Write-Warning "LocalMachine certificate store is not supported on Linux. Certificate created but not stored."
