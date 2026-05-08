@@ -132,7 +132,8 @@ function Get-Certificate {
 
         [Parameter(ParameterSetName = 'SubmitRequest')]
         [Parameter(ParameterSetName = 'PendingRetrieval')]
-        [object] $Credential,
+        [System.Management.Automation.Credential()]
+        [PSCredential] $Credential,
 
         [Parameter(ParameterSetName = 'SubmitRequest')]
         [string] $CertStoreLocation,
@@ -143,6 +144,7 @@ function Get-Certificate {
         [object] $Request
     )
 
+    process {
     # ── Windows-only parameter sets — terminating stub ────────────────────────
     if ($PSCmdlet.ParameterSetName -eq 'SubmitRequest') {
         $ex  = [System.PlatformNotSupportedException]::new(
@@ -264,4 +266,5 @@ function Get-Certificate {
     finally {
         $store.Dispose()
     }
+    } # end process
 }

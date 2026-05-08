@@ -1,4 +1,6 @@
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.2.0' }
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification = 'Test file uses dummy passwords for certificate operations')]
+param()
 
 BeforeDiscovery {
     $script:onLinux = $IsLinux

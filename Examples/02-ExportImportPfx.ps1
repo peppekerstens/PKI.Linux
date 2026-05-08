@@ -1,3 +1,4 @@
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification = 'Example script uses a dummy password for illustration only')]
 param()
 
 # Example 02 — Export and reimport a PFX certificate

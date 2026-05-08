@@ -1,3 +1,4 @@
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification = 'Example script uses a dummy password for illustration only')]
 param()
 
 # Example 04 — ECDSA certificate for a web server (TLS demo)
